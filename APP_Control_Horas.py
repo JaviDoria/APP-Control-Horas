@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import json
 import os
+import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -116,6 +117,46 @@ class TimeTracker:
             "avg_per_day": total_horas_netas / dias_trabajados if dias_trabajados > 0 else 0
         }
 
+def create_hours_comparison_chart(horas_reales, horas_objetivo=40):
+    """Crear gráfico de comparación de horas reales vs objetivo"""
+    fig = go.Figure()
+    
+    # Barras
+    fig.add_trace(go.Bar(
+        x=['Horas Trabajadas', 'Objetivo (40h)'],
+        y=[horas_reales, horas_objetivo],
+        marker_color=['#1f77b4', 'lightgray'],
+        text=[f'{horas_reales:.1f}h', '40h'],
+        textposition='auto',
+    ))
+    
+    # Línea de objetivo
+    fig.add_hline(y=horas_objetivo, line_dash="dash", line_color="red", 
+                 annotation_text="Objetivo Semanal", 
+                 annotation_position="bottom right")
+    
+    # Diferencia
+    diferencia = horas_reales - horas_objetivo
+    if diferencia > 0:
+        fig.add_annotation(x=0, y=horas_reales + 1,
+                          text=f"+{diferencia:.1f}h extra",
+                          showarrow=False,
+                          font=dict(color="green"))
+    else:
+        fig.add_annotation(x=0, y=horas_reales - 1,
+                          text=f"{diferencia:.1f}h faltantes",
+                          showarrow=False,
+                          font=dict(color="red"))
+    
+    fig.update_layout(
+        title="Horas Trabajadas vs Objetivo Semanal (40h)",
+        yaxis_title="Horas",
+        showlegend=False,
+        height=400
+    )
+    
+    return fig
+
 def main():
     st.title("⏰ Control de Horas de Trabajo")
     st.markdown("---")
@@ -197,14 +238,18 @@ def main():
         semana_actual = today - datetime.timedelta(days=today.weekday())
         semana_seleccionada = st.slider(
             "Selecciona la semana:",
-            min_value=-4,
-            max_value=4,
+            min_value=-52,    # 52 semanas atrás (1 año)
+            max_value=52,     # 52 semanas adelante
             value=0,
             format="Semana %d"
         )
         
         inicio_semana = semana_actual + datetime.timedelta(weeks=semana_seleccionada)
         datos_semana = tracker.get_week_data(inicio_semana)
+        
+        # Mostrar rango de fechas de la semana
+        fin_semana = inicio_semana + datetime.timedelta(days=6)
+        st.subheader(f"Semana del {inicio_semana.strftime('%d/%m/%Y')} al {fin_semana.strftime('%d/%m/%Y')}")
         
         # Métricas
         col1, col2, col3, col4 = st.columns(4)
@@ -221,8 +266,37 @@ def main():
         descuento_total = datos_semana['total_hours_gross'] - datos_semana['total_hours_net']
         st.info(f"💰 Total descontado por descansos: {descuento_total:.2f} horas")
         
+        # GRÁFICO DE COMPARACIÓN CON OBJETIVO DE 40 HORAS
+        st.subheader("🎯 Comparación con Objetivo Semanal")
+        
+        horas_objetivo = 40
+        horas_reales = datos_semana['total_hours_net']
+        diferencia = horas_reales - horas_objetivo
+        
+        col_graf1, col_graf2 = st.columns([2, 1])
+        
+        with col_graf1:
+            # Gráfico de barras comparativo
+            fig = create_hours_comparison_chart(horas_reales, horas_objetivo)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col_graf2:
+            # Panel de estadísticas
+            st.metric("Diferencia", 
+                     f"{diferencia:+.1f}h", 
+                     delta_color="inverse" if diferencia < 0 else "normal")
+            
+            st.info(f"**Porcentaje:** {((horas_reales / horas_objetivo) * 100):.1f}%")
+            
+            if diferencia > 0:
+                st.success("✅ Superaste el objetivo semanal")
+            elif diferencia == 0:
+                st.info("🎯 Cumpliste exactamente el objetivo")
+            else:
+                st.warning("⚠️ Faltan horas para cumplir el objetivo")
+        
         # Tabla de la semana
-        st.subheader("Detalle de la Semana")
+        st.subheader("📅 Detalle de la Semana")
         dias_semana = []
         
         for i in range(7):
@@ -257,23 +331,6 @@ def main():
         
         df_semana = pd.DataFrame(dias_semana)
         st.dataframe(df_semana, use_container_width=True)
-        
-        # Gráfico de horas
-        if datos_semana['days_worked'] > 0:
-            st.subheader("📈 Distribución de Horas")
-            
-            chart_data = []
-            for dia_str, datos in datos_semana['days'].items():
-                dia_fecha = datetime.datetime.strptime(dia_str, "%Y-%m-%d")
-                chart_data.append({
-                    "Día": dia_fecha.strftime("%a %d/%m"),
-                    "Horas Netas": datos['hours_net'],
-                    "Horas Brutas": datos['hours_gross']
-                })
-            
-            if chart_data:
-                chart_df = pd.DataFrame(chart_data)
-                st.bar_chart(chart_df.set_index("Día"))
     
     elif menu == "Historial":
         st.header("📋 Historial Completo")
