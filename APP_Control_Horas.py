@@ -3,7 +3,6 @@ import pandas as pd
 import datetime
 import json
 import os
-import plotly.graph_objects as go
 
 # Configuración de la página
 st.set_page_config(
@@ -116,46 +115,66 @@ class TimeTracker:
             "days_worked": dias_trabajados,
             "avg_per_day": total_horas_netas / dias_trabajados if dias_trabajados > 0 else 0
         }
+    
+    def get_year_total(self, year=None):
+        """Obtener total de horas netas del año"""
+        if year is None:
+            year = datetime.datetime.now().year
+        
+        total_horas_netas = 0
+        total_horas_brutas = 0
+        dias_trabajados = 0
+        
+        for date_str, data in self.data.items():
+            try:
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                if date_obj.year == year:
+                    horas_netas, horas_brutas = self.calculate_hours(date_str)
+                    if horas_netas:
+                        total_horas_netas += horas_netas
+                        total_horas_brutas += horas_brutas
+                        dias_trabajados += 1
+            except:
+                continue
+        
+        return {
+            "total_hours_net": round(total_horas_netas, 2),
+            "total_hours_gross": round(total_horas_brutas, 2),
+            "days_worked": dias_trabajados,
+            "avg_per_day": round(total_horas_netas / dias_trabajados, 2) if dias_trabajados > 0 else 0
+        }
 
 def create_hours_comparison_chart(horas_reales, horas_objetivo=40):
-    """Crear gráfico de comparación de horas reales vs objetivo"""
-    fig = go.Figure()
-    
-    # Barras
-    fig.add_trace(go.Bar(
-        x=['Horas Trabajadas', 'Objetivo (40h)'],
-        y=[horas_reales, horas_objetivo],
-        marker_color=['#1f77b4', 'lightgray'],
-        text=[f'{horas_reales:.1f}h', '40h'],
-        textposition='auto',
-    ))
-    
-    # Línea de objetivo
-    fig.add_hline(y=horas_objetivo, line_dash="dash", line_color="red", 
-                 annotation_text="Objetivo Semanal", 
-                 annotation_position="bottom right")
-    
-    # Diferencia
+    """Crear gráfico de comparación usando Streamlit nativo"""
     diferencia = horas_reales - horas_objetivo
-    if diferencia > 0:
-        fig.add_annotation(x=0, y=horas_reales + 1,
-                          text=f"+{diferencia:.1f}h extra",
-                          showarrow=False,
-                          font=dict(color="green"))
-    else:
-        fig.add_annotation(x=0, y=horas_reales - 1,
-                          text=f"{diferencia:.1f}h faltantes",
-                          showarrow=False,
-                          font=dict(color="red"))
+    porcentaje = (horas_reales / horas_objetivo) * 100
     
-    fig.update_layout(
-        title="Horas Trabajadas vs Objetivo Semanal (40h)",
-        yaxis_title="Horas",
-        showlegend=False,
-        height=400
-    )
+    # Crear DataFrame para el gráfico
+    data = {
+        'Tipo': ['Horas Trabajadas', 'Objetivo (40h)'],
+        'Horas': [horas_reales, horas_objetivo],
+        'Color': ['#1f77b4', 'lightgray']
+    }
+    df_chart = pd.DataFrame(data)
     
-    return fig
+    # Mostrar gráfico de barras
+    chart = st.bar_chart(df_chart.set_index('Tipo')['Horas'], use_container_width=True)
+    
+    # Mostrar métricas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Diferencia", f"{diferencia:+.1f}h", delta_color="inverse" if diferencia < 0 else "normal")
+    with col2:
+        st.metric("Porcentaje", f"{porcentaje:.1f}%")
+    with col3:
+        if diferencia > 0:
+            st.success("✅ Superaste el objetivo")
+        elif diferencia == 0:
+            st.info("🎯 Objetivo cumplido")
+        else:
+            st.warning("⚠️ Faltan horas")
+    
+    return chart
 
 def main():
     st.title("⏰ Control de Horas de Trabajo")
@@ -164,11 +183,35 @@ def main():
     # Inicializar tracker
     tracker = TimeTracker()
     
-    # Navegación
-    menu = st.sidebar.selectbox(
-        "Navegación",
-        ["Registrar Horas", "Resumen Semanal", "Historial", "Administrar Registros"]
-    )
+    # Obtener total anual para mostrar en sidebar
+    year_total = tracker.get_year_total()
+    
+    # Sidebar con estadísticas anuales
+    with st.sidebar:
+        st.title("Navegación")
+        menu = st.selectbox(
+            "Selecciona página:",
+            ["Registrar Horas", "Resumen Semanal", "Historial", "Administrar Registros"]
+        )
+        
+        st.markdown("---")
+        st.subheader("📊 Resumen Anual")
+        st.metric("Total Horas Netas", f"{year_total['total_hours_net']:.1f}h")
+        st.metric("Días Trabajados", year_total['days_worked'])
+        st.metric("Promedio Diario", f"{year_total['avg_per_day']:.1f}h")
+        st.metric("Horas Brutas", f"{year_total['total_hours_gross']:.1f}h")
+        
+        # Selector de año para el resumen
+        current_year = datetime.datetime.now().year
+        selected_year = st.selectbox(
+            "Ver año:",
+            options=[current_year, current_year-1, current_year-2],
+            index=0
+        )
+        
+        if selected_year != current_year:
+            year_data = tracker.get_year_total(selected_year)
+            st.info(f"**{selected_year}:** {year_data['total_hours_net']:.1f}h netas")
     
     today = datetime.date.today()
     
@@ -268,32 +311,7 @@ def main():
         
         # GRÁFICO DE COMPARACIÓN CON OBJETIVO DE 40 HORAS
         st.subheader("🎯 Comparación con Objetivo Semanal")
-        
-        horas_objetivo = 40
-        horas_reales = datos_semana['total_hours_net']
-        diferencia = horas_reales - horas_objetivo
-        
-        col_graf1, col_graf2 = st.columns([2, 1])
-        
-        with col_graf1:
-            # Gráfico de barras comparativo
-            fig = create_hours_comparison_chart(horas_reales, horas_objetivo)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col_graf2:
-            # Panel de estadísticas
-            st.metric("Diferencia", 
-                     f"{diferencia:+.1f}h", 
-                     delta_color="inverse" if diferencia < 0 else "normal")
-            
-            st.info(f"**Porcentaje:** {((horas_reales / horas_objetivo) * 100):.1f}%")
-            
-            if diferencia > 0:
-                st.success("✅ Superaste el objetivo semanal")
-            elif diferencia == 0:
-                st.info("🎯 Cumpliste exactamente el objetivo")
-            else:
-                st.warning("⚠️ Faltan horas para cumplir el objetivo")
+        create_hours_comparison_chart(datos_semana['total_hours_net'])
         
         # Tabla de la semana
         st.subheader("📅 Detalle de la Semana")
