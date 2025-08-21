@@ -1,0 +1,4 @@
+[runner]
+# Set the timezone to Europe/Madrid
+magicEnabled = true
+timezone = "Europe/Madrid"
