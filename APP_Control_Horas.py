@@ -11,6 +11,10 @@ st.set_page_config(
     layout="wide"
 )
 
+# Inicializar el estado de sesión si aún no existe
+if 'hora_registro' not in st.session_state:
+    st.session_state.hora_registro = datetime.datetime.now().time()
+
 class TimeTracker:
     def __init__(self):
         self.data_file = "work_hours.json"
@@ -251,12 +255,14 @@ def main():
                 help="Selecciona si vas a registrar la entrada o la salida"
             )
             
-            # Hora actual por defecto
-            ahora = datetime.datetime.now().time()
+            # Hora actual por defecto (usando el estado de sesión)
             hora_registro = st.time_input(
                 f"Hora de {registro_tipo.lower()}:",
-                value=ahora
+                value=st.session_state.hora_registro
             )
+            
+            # Actualizar el estado de sesión solo si el usuario cambia la hora
+            st.session_state.hora_registro = hora_registro
             
             notas = st.text_area("Notas del día", "")
             
@@ -281,8 +287,8 @@ def main():
         semana_actual = today - datetime.timedelta(days=today.weekday())
         semana_seleccionada = st.slider(
             "Selecciona la semana:",
-            min_value=-52,    # 52 semanas atrás (1 año)
-            max_value=52,     # 52 semanas adelante
+            min_value=-52,   # 52 semanas atrás (1 año)
+            max_value=52,    # 52 semanas adelante
             value=0,
             format="Semana %d"
         )
